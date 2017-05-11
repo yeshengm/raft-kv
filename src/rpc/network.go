@@ -5,16 +5,6 @@ import (
 	"sync"
 )
 
-// RPC API for raft
-//
-// MakeNetwork()
-//		MakeEnd(endName)
-//		AddServer(serverName, server)
-//		DeleteServer(serverName)
-//		Connect(endName, serverName)
-//		Enable(endName, enabled)
-//    Reliable(yes)
-
 // Network maintains the status of simulated network
 // and serves as an intermediate router for requests
 type Network struct {
@@ -40,6 +30,7 @@ func MakeNetwork() *Network {
 		connections: make(map[interface{}]interface{}),
 		endCh:       make(chan reqMsg),
 	}
+	// TODO go routine to handle reqs
 	return net
 }
 
@@ -52,7 +43,7 @@ func (net *Network) Reliable(b bool) {
 
 func (net *Network) LongDelays(b bool) {
 	net.Lock()
-	defer net.Unlonk()
+	defer net.Unlock()
 	net.longDelays = b
 }
 
@@ -68,7 +59,7 @@ func (net *Network) AddClientEnd(en interface{}) *ClientEnd {
 	defer net.Unlock()
 
 	if _, ok := net.ends[en]; ok {
-		log.Fatalf("MakeClientEnd: %v end already exists", en)
+		log.Fatalf("MakeClientEnd: %v already exists", en)
 	}
 	e := &ClientEnd{
 		endName: en,
@@ -110,8 +101,8 @@ func (net *Network) Connect(en interface{}, sn interface{}) {
 }
 
 func (net *Network) Enable(en interface{}, b bool) {
-	ru.Lock()
-	defer ru.Unlock()
+	net.Lock()
+	defer net.Unlock()
 	if _, ok := net.ends[en]; !ok {
 		log.Fatalf("Enable: non-existing end %v\n", en)
 	}
