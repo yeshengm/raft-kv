@@ -2,7 +2,9 @@ package rpc
 
 import (
 	"log"
+	"math/rand"
 	"sync"
+	"time"
 )
 
 // Network maintains the status of simulated network
@@ -30,7 +32,11 @@ func MakeNetwork() *Network {
 		connections: make(map[interface{}]interface{}),
 		endCh:       make(chan reqMsg),
 	}
-	// TODO go routine to handle reqs
+	go func() {
+		for req := range net.endCh {
+			go net.RouteRequest(req)
+		}
+	}()
 	return net
 }
 
@@ -63,7 +69,7 @@ func (net *Network) AddClientEnd(en interface{}) *ClientEnd {
 	}
 	e := &ClientEnd{
 		endName: en,
-		ch:      net.endCh,
+		reqCh:   net.endCh,
 	}
 	net.ends[en] = e
 	net.enabled[en] = false
@@ -107,4 +113,69 @@ func (net *Network) Enable(en interface{}, b bool) {
 		log.Fatalf("Enable: non-existing end %v\n", en)
 	}
 	net.enabled[en] = b
+}
+
+func (net *Network) getClientEndInfo(en interface{}) (enabled bool,
+	serverName interface{}, server *Server,
+	reliable bool, longdelays bool, reordering bool) {
+	net.Lock()
+	enabled = net.enabled[en]
+	serverName = net.connections[en]
+	server = net.servers[serverName]
+	reliable = net.reliable
+	longdelays = net.longDelays
+	reordering = net.reordering
+	return
+}
+
+func (net *Network) isServerHead(en interface{}, sn interface{}, svr *Service) bool {
+	net.Lock()
+	defer net.Unlock()
+	if !net.enabled[en] || net.servers[sn] != svr {
+		return true
+	}
+	return false
+}
+
+func (net *Network) RouteRequest(req reqMsg) {
+	enabled, sn, svr, reliable, ld, ro := net.getClientEndInfo(req.endName)
+	if enabled && sn != nil && svr != nil {
+		if !reliable {
+			// regular transmission delay
+			ms := rand.Int() % 27
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			// possible packet loss
+			if (rand.Int() % 1000) < 100 {
+				req.replyCh <- replyMsg{false, nil}
+				return
+			}
+		}
+		// rpc is handled here
+		// create a channel to wait for reply
+		repCh := make(chan replyMsg)
+		go func() {
+			r := svr.dispatch(req)
+			repCh <- r
+		}()
+		repOk, svrDead := false, false
+		for !repOk && !svrDead {
+			select {
+			case reply = <-repCh:
+				repOk = true
+			case <-time.After(100 * time.Millisecond):
+				svrDead = net.isServerDead(req.endName, sn, svr)
+			}
+		}
+	} else {
+		// no reply and timeout
+		ms := 0
+		if ld {
+			ms = rand.Int() % 7000
+		} else {
+			ms = rand.Int() % 100
+		}
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		req.replyCh <- replyMsg{false, nil}
+	}
+	// TODO
 }
