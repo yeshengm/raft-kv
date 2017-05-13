@@ -56,10 +56,9 @@ func (svc *Service) dispatch(methname string, req reqMsg) replyMsg {
 
 		function := method.Func
 		function.Call([]reflect.Value{svc.rcvr, args.Elem(), replyv})
-
 		repBuf := new(bytes.Buffer)
 		repEnc := gob.NewEncoder(repBuf)
-		repEnc.Encode(replyv)
+		repEnc.EncodeValue(replyv)
 		return replyMsg{true, repBuf.Bytes()}
 	} else {
 		log.Fatalf("unknown method %v to call in service %v\n",

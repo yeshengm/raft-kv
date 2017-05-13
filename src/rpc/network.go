@@ -34,7 +34,7 @@ func MakeNetwork() *Network {
 	}
 	go func() {
 		for req := range net.endCh {
-			go net.RouteRequest(req)
+			go net.ProcessRequest(req)
 		}
 	}()
 	return net
@@ -119,6 +119,7 @@ func (net *Network) getClientEndInfo(en interface{}) (enabled bool,
 	serverName interface{}, server *Server,
 	reliable bool, longdelays bool, reordering bool) {
 	net.Lock()
+        defer net.Unlock()
 	enabled = net.enabled[en]
 	serverName = net.connections[en]
 	server = net.servers[serverName]
@@ -128,7 +129,7 @@ func (net *Network) getClientEndInfo(en interface{}) (enabled bool,
 	return
 }
 
-func (net *Network) isServerHead(en interface{}, sn interface{}, svr *Service) bool {
+func (net *Network) isServerDead(en interface{}, sn interface{}, svr *Server) bool {
 	net.Lock()
 	defer net.Unlock()
 	if !net.enabled[en] || net.servers[sn] != svr {
@@ -137,7 +138,7 @@ func (net *Network) isServerHead(en interface{}, sn interface{}, svr *Service) b
 	return false
 }
 
-func (net *Network) RouteRequest(req reqMsg) {
+func (net *Network) ProcessRequest(req reqMsg) {
 	enabled, sn, svr, reliable, ld, ro := net.getClientEndInfo(req.endName)
 	if enabled && sn != nil && svr != nil {
 		if !reliable {
@@ -157,6 +158,7 @@ func (net *Network) RouteRequest(req reqMsg) {
 			r := svr.dispatch(req)
 			repCh <- r
 		}()
+		var reply replyMsg
 		repOk, svrDead := false, false
 		for !repOk && !svrDead {
 			select {
@@ -165,6 +167,18 @@ func (net *Network) RouteRequest(req reqMsg) {
 			case <-time.After(100 * time.Millisecond):
 				svrDead = net.isServerDead(req.endName, sn, svr)
 			}
+		}
+		svrDead = net.isServerDead(req.endName, sn, svr)
+		if !repOk || svrDead {
+			req.replyCh <- replyMsg{false, nil}
+		} else if !reliable && (rand.Int()%1000) < 100 {
+			req.replyCh <- replyMsg{false, nil}
+		} else if ro && rand.Intn(900) < 600 {
+			ms := 200 + rand.Intn(1+rand.Intn(2000))
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			req.replyCh <- reply
+		} else {
+			req.replyCh <- reply
 		}
 	} else {
 		// no reply and timeout
@@ -177,5 +191,4 @@ func (net *Network) RouteRequest(req reqMsg) {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 		req.replyCh <- replyMsg{false, nil}
 	}
-	// TODO
 }
