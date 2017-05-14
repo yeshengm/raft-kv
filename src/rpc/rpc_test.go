@@ -236,10 +236,10 @@ func TestCounts(t *testing.T) {
 		}
 	}
 
-	// n := rn.GetCount(99)
-	// if n != 17 {
-	// 	t.Fatalf("wrong GetCount() %v, expected 17\n", n)
-	// }
+	n := rn.GetCount(99)
+	if n != 17 {
+		t.Fatalf("wrong GetCount() %v, expected 17\n", n)
+	}
 }
 
 //
@@ -293,10 +293,10 @@ func TestConcurrentMany(t *testing.T) {
 		t.Fatalf("wrong number of RPCs completed, got %v, expected %v", total, nclients*nrpcs)
 	}
 
-	// n := rn.GetCount(1000)
-	// if n != total {
-	// 	t.Fatalf("wrong GetCount() %v, expected %v\n", n, total)
-	// }
+	n := rn.GetCount(1000)
+	if n != total {
+		t.Fatalf("wrong GetCount() %v, expected %v\n", n, total)
+	}
 }
 
 //
@@ -405,10 +405,10 @@ func TestConcurrentOne(t *testing.T) {
 		t.Fatalf("wrong number of RPCs delivered")
 	}
 
-	// n := rn.GetCount(1000)
-	// if n != total {
-	// 	t.Fatalf("wrong GetCount() %v, expected %v\n", n, total)
-	// }
+	n := rn.GetCount(1000)
+	if n != total {
+		t.Fatalf("wrong GetCount() %v, expected %v\n", n, total)
+	}
 }
 
 //
@@ -478,10 +478,10 @@ func TestRegression1(t *testing.T) {
 		t.Fatalf("wrong number (%v) of RPCs delivered, expected 1", len(js.log2))
 	}
 
-	// n := rn.GetCount(1000)
-	// if n != 1 {
-	// 	t.Fatalf("wrong GetCount() %v, expected %v\n", n, 1)
-	// }
+	n := rn.GetCount(1000)
+	if n != 1 {
+		t.Fatalf("wrong GetCount() %v, expected %v\n", n, 1)
+	}
 }
 
 //

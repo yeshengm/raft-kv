@@ -115,11 +115,17 @@ func (net *Network) Enable(en interface{}, b bool) {
 	net.enabled[en] = b
 }
 
+func (net *Network) GetCount(serverName interface{}) int {
+	net.Lock()
+	defer net.Unlock()
+	return net.servers[serverName].GetCount()
+}
+
 func (net *Network) getClientEndInfo(en interface{}) (enabled bool,
 	serverName interface{}, server *Server,
 	reliable bool, longdelays bool, reordering bool) {
 	net.Lock()
-        defer net.Unlock()
+	defer net.Unlock()
 	enabled = net.enabled[en]
 	serverName = net.connections[en]
 	server = net.servers[serverName]

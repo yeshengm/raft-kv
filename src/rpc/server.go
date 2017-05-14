@@ -10,6 +10,7 @@ import (
 type Server struct {
 	sync.Mutex
 	services map[string]*Service
+	count    int
 }
 
 func MakeServer() *Server {
@@ -25,8 +26,15 @@ func (s *Server) Register(svc *Service) {
 	s.services[svc.name] = svc
 }
 
+func (s *Server) GetCount() int {
+	s.Lock()
+	defer s.Unlock()
+	return s.count
+}
+
 func (s *Server) dispatch(req reqMsg) replyMsg {
 	s.Lock()
+	s.count += 1
 	dot := strings.LastIndex(req.svcMethod, ".")
 	serviceName := req.svcMethod[:dot]
 	methodName := req.svcMethod[dot+1:]
