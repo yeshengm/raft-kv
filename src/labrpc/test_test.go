@@ -1,58 +1,11 @@
-package rpc
+package labrpc
 
-import (
-	"fmt"
-	"runtime"
-	"strconv"
-	"sync"
-	"testing"
-	"time"
-)
-
-func TestNetconf(t *testing.T) {
-	net := MakeNetwork()
-	// reliable
-	if net.reliable == false {
-		t.Errorf("network should be set to reliable")
-	}
-	// set unreliable
-	net.Reliable(false)
-	if net.reliable == true {
-		t.Errorf("network has already been set to unreliable")
-	}
-	// add client
-	for i := 0; i < 5; i++ {
-		net.AddClientEnd(fmt.Sprintf("client:%v", i))
-	}
-	if _, ok := net.ends["client:4"]; !ok {
-		t.Errorf("client 4 is not added to net.ends")
-	}
-	if b, _ := net.enabled["client:3"]; b {
-		t.Errorf("client end should by default be disabled")
-	}
-	// add server
-	for i := 0; i < 3; i++ {
-		net.AddServer(fmt.Sprintf("s:%v", i), &Server{})
-	}
-	if _, ok := net.servers["s:0"]; !ok {
-		t.Error("server 0 is not added to net.servers")
-	}
-	// delete server
-	net.DeleteServer("s:1")
-	if s, _ := net.servers["s:1"]; s != nil {
-		t.Error("server 1 is not properly deleted")
-	}
-	// connect end to server
-	net.Connect("client:3", "s:0")
-	if net.connections["client:3"] != "s:0" {
-		t.Error("client3 and server0 is not properly connected")
-	}
-	// enable a client end
-	net.Enable("client:1", true)
-	if !net.enabled["client:1"] {
-		t.Error("client1 is not enabled")
-	}
-}
+import "testing"
+import "strconv"
+import "sync"
+import "runtime"
+import "time"
+import "fmt"
 
 type JunkArgs struct {
 	X int
@@ -103,17 +56,18 @@ func TestBasic(t *testing.T) {
 
 	rn := MakeNetwork()
 
-	e := rn.AddClientEnd("end1-99")
+	e := rn.MakeEnd("end1-99")
 
 	js := &JunkServer{}
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer("server99", rs)
 
 	rn.Connect("end1-99", "server99")
 	rn.Enable("end1-99", true)
+
 	{
 		reply := ""
 		e.Call("JunkServer.Handler2", 111, &reply)
@@ -136,13 +90,13 @@ func TestTypes(t *testing.T) {
 
 	rn := MakeNetwork()
 
-	e := rn.AddClientEnd("end1-99")
+	e := rn.MakeEnd("end1-99")
 
 	js := &JunkServer{}
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer("server99", rs)
 
 	rn.Connect("end1-99", "server99")
@@ -177,13 +131,13 @@ func TestDisconnect(t *testing.T) {
 
 	rn := MakeNetwork()
 
-	e := rn.AddClientEnd("end1-99")
+	e := rn.MakeEnd("end1-99")
 
 	js := &JunkServer{}
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer("server99", rs)
 
 	rn.Connect("end1-99", "server99")
@@ -215,13 +169,13 @@ func TestCounts(t *testing.T) {
 
 	rn := MakeNetwork()
 
-	e := rn.AddClientEnd("end1-99")
+	e := rn.MakeEnd("end1-99")
 
 	js := &JunkServer{}
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer(99, rs)
 
 	rn.Connect("end1-99", 99)
@@ -254,7 +208,7 @@ func TestConcurrentMany(t *testing.T) {
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer(1000, rs)
 
 	ch := make(chan int)
@@ -266,7 +220,7 @@ func TestConcurrentMany(t *testing.T) {
 			n := 0
 			defer func() { ch <- n }()
 
-			e := rn.AddClientEnd(i)
+			e := rn.MakeEnd(i)
 			rn.Connect(i, 1000)
 			rn.Enable(i, true)
 
@@ -312,7 +266,7 @@ func TestUnreliable(t *testing.T) {
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer(1000, rs)
 
 	ch := make(chan int)
@@ -323,7 +277,7 @@ func TestUnreliable(t *testing.T) {
 			n := 0
 			defer func() { ch <- n }()
 
-			e := rn.AddClientEnd(i)
+			e := rn.MakeEnd(i)
 			rn.Connect(i, 1000)
 			rn.Enable(i, true)
 
@@ -363,10 +317,10 @@ func TestConcurrentOne(t *testing.T) {
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer(1000, rs)
 
-	e := rn.AddClientEnd("c")
+	e := rn.MakeEnd("c")
 	rn.Connect("c", 1000)
 	rn.Enable("c", true)
 
@@ -424,10 +378,10 @@ func TestRegression1(t *testing.T) {
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer(1000, rs)
 
-	e := rn.AddClientEnd("c")
+	e := rn.MakeEnd("c")
 	rn.Connect("c", 1000)
 
 	// start some RPCs while the ClientEnd is disabled.
@@ -494,13 +448,13 @@ func TestKilled(t *testing.T) {
 
 	rn := MakeNetwork()
 
-	e := rn.AddClientEnd("end1-99")
+	e := rn.MakeEnd("end1-99")
 
 	js := &JunkServer{}
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer("server99", rs)
 
 	rn.Connect("end1-99", "server99")
@@ -538,13 +492,13 @@ func TestBenchmark(t *testing.T) {
 
 	rn := MakeNetwork()
 
-	e := rn.AddClientEnd("end1-99")
+	e := rn.MakeEnd("end1-99")
 
 	js := &JunkServer{}
 	svc := MakeService(js)
 
 	rs := MakeServer()
-	rs.Register(svc)
+	rs.AddService(svc)
 	rn.AddServer("server99", rs)
 
 	rn.Connect("end1-99", "server99")
