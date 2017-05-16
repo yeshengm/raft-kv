@@ -78,6 +78,15 @@ func make_config(t *testing.T, n int, unreliable bool) *config {
 	return cfg
 }
 
+// checkout Raft log info
+func (cfg *config) debug() {
+	fmt.Println("__cfg_dbg_begin_")
+	for i, r := range cfg.rafts {
+		fmt.Println("peer ", i, " commit ", r.commitIndex ,": ", r.log[1:])
+	}
+	fmt.Println("__cfg_dbg_over__")
+}
+
 // shut down a Raft server but save its persistent state.
 func (cfg *config) crash1(i int) {
 	cfg.disconnect(i)
