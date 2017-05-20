@@ -13,7 +13,7 @@ package raft
 //
 
 import (
-	"labrpc"
+	"simrpc"
 	"math/rand"
 	"sync"
 	"time"
@@ -66,8 +66,8 @@ type AppendEntriesReply struct {
 type ApplyMsg struct {
 	Index       int
 	Command     interface{}
-	UseSnapshot bool   // ignore for lab2; only used in lab3
-	Snapshot    []byte // ignore for lab2; only used in lab3
+	UseSnapshot bool
+	Snapshot    []byte
 }
 
 // raft status
@@ -93,13 +93,10 @@ func randomTimeoutGen() time.Duration {
 
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
-	peers     []*labrpc.ClientEnd // RPC end points of all peers
+	peers     []*simrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
 	// persistent fields
 	status      int
 	currentTerm int
@@ -179,7 +176,7 @@ func (rf *Raft) StartWorking() {
 }
 
 /////////////////////////////////////////////////
-//  TODO Truly interesting stuff begins here   //
+//    Truly interesting stuff begins here      //
 /////////////////////////////////////////////////
 
 func (rf *Raft) requestVoteReplyHandler(rep RequestVoteReply) {
@@ -343,7 +340,6 @@ func (rf *Raft) heartbeatTimeoutHandler() {
 
 // RPC calls
 //
-// example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
 // expects RPC arguments in args.
 // fills in *reply with RPC reply, so caller should
@@ -352,7 +348,7 @@ func (rf *Raft) heartbeatTimeoutHandler() {
 // the same as the types of the arguments declared in the
 // handler function (including whether they are pointers).
 //
-// The labrpc package simulates a lossy network, in which servers
+// The simrpc package simulates a lossy network, in which servers
 // may be unreachable, and in which requests and replies may be lost.
 // Call() sends a request and waits for a reply. If a reply arrives
 // within a timeout interval, Call() returns true; otherwise
@@ -363,13 +359,6 @@ func (rf *Raft) heartbeatTimeoutHandler() {
 // Call() is guaranteed to return (perhaps after a delay) *except* if the
 // handler function on the server side does not return.  Thus there
 // is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
 //
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
@@ -500,9 +489,7 @@ func (rf *Raft) GetState() (int, bool) {
 	return rf.currentTerm, rf.status == Leader
 }
 
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
+// simulates disk io
 func (rf *Raft) persist() {
 	w := new(bytes.Buffer)
 	e := gob.NewEncoder(w)
@@ -523,9 +510,6 @@ func (rf *Raft) readPersist(data []byte) {
 	d.Decode(&rf.currentTerm)
 	d.Decode(&rf.votedFor)
 	d.Decode(&rf.log)
-	//if data == nil || len(data) < 1 { // bootstrap without any state?
-	//	return
-	//}
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -556,30 +540,23 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 }
 
-// the tester calls Kill() when a Raft instance won't
-// be needed again. you are not required to do anything
-// in Kill(), but it might be convenient to (for example)
-// turn off debug output from this instance.
+// de-allocates resources
 func (rf *Raft) Kill() {
-	// Your code here, if desired.
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	close(rf.electionTimeout)
+	close(rf.heartbeatTimeout)
+	close(rf.requestVoteReply)
+	close(rf.appendEntriesReply)
 }
 
-// the service or tester wants to create a Raft server. the ports
-// of all the Raft servers (including this one) are in peers[]. this
-// server's port is peers[me]. all the servers' peers[] arrays
-// have the same order. persister is a place for this server to
-// save its persistent state, and also initially holds the most
-// recent saved state, if any. applyCh is a channel on which the
-// tester or service expects Raft to send ApplyMsg messages.
-// Make() must return quickly, so it should start goroutines
-// for any long-running work.
-func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan ApplyMsg) *Raft {
+// factory method to create a Raft peer
+func Make(peers []*simrpc.ClientEnd, me int, persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
 
-	// Your initialization code here (2A, 2B, 2C).
 	// initialize fields
 	rf.currentTerm = 1
 	rf.status = Follower // a peer should be follower at the first place

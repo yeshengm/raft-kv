@@ -1,4 +1,4 @@
-package labrpc
+package simrpc
 
 import "testing"
 import "strconv"

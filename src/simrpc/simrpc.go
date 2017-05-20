@@ -1,16 +1,10 @@
-package labrpc
+package simrpc
 
 //
-// channel-based RPC, for 824 labs.
+// channel-based RPC
 //
 // simulates a network that can lose requests, lose replies,
 // delay messages, and entirely disconnect particular hosts.
-//
-// we will use the original labrpc.go to test your code for grading.
-// so, while you can modify this code to help you debug, please
-// test against the original before submitting.
-//
-// adapted from Go net/rpc/server.go.
 //
 // sends gob-encoded values to ensure that RPCs
 // don't include references to program objects.
@@ -370,7 +364,7 @@ func (rs *Server) dispatch(req reqMsg) replyMsg {
 		for k, _ := range rs.services {
 			choices = append(choices, k)
 		}
-		log.Fatalf("labrpc.Server.dispatch(): unknown service %v in %v.%v; expecting one of %v\n",
+		log.Fatalf("simrpc.Server.dispatch(): unknown service %v in %v.%v; expecting one of %v\n",
 			serviceName, serviceName, methodName, choices)
 		return replyMsg{false, nil}
 	}
@@ -453,7 +447,7 @@ func (svc *Service) dispatch(methname string, req reqMsg) replyMsg {
 		for k, _ := range svc.methods {
 			choices = append(choices, k)
 		}
-		log.Fatalf("labrpc.Service.dispatch(): unknown method %v in %v; expecting one of %v\n",
+		log.Fatalf("simrpc.Service.dispatch(): unknown method %v in %v; expecting one of %v\n",
 			methname, req.svcMeth, choices)
 		return replyMsg{false, nil}
 	}

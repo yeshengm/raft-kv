@@ -8,7 +8,7 @@ package raft
 // test with the original before submitting.
 //
 
-import "labrpc"
+import "simrpc"
 import "log"
 import "sync"
 import "testing"
@@ -29,7 +29,7 @@ func randstring(n int) string {
 type config struct {
 	mu        sync.Mutex
 	t         *testing.T
-	net       *labrpc.Network
+	net       *simrpc.Network
 	n         int
 	done      int32 // tell internal threads to die
 	rafts     []*Raft
@@ -51,7 +51,7 @@ func make_config(t *testing.T, n int, unreliable bool) *config {
 	runtime.GOMAXPROCS(4)
 	cfg := &config{}
 	cfg.t = t
-	cfg.net = labrpc.MakeNetwork()
+	cfg.net = simrpc.MakeNetwork()
 	cfg.n = n
 	cfg.applyErr = make([]string, cfg.n)
 	cfg.rafts = make([]*Raft, cfg.n)
@@ -136,7 +136,7 @@ func (cfg *config) start1(i int) {
 	}
 
 	// a fresh set of ClientEnds.
-	ends := make([]*labrpc.ClientEnd, cfg.n)
+	ends := make([]*simrpc.ClientEnd, cfg.n)
 	for j := 0; j < cfg.n; j++ {
 		ends[j] = cfg.net.MakeEnd(cfg.endnames[i][j])
 		cfg.net.Connect(cfg.endnames[i][j], j)
@@ -198,8 +198,8 @@ func (cfg *config) start1(i int) {
 	cfg.rafts[i] = rf
 	cfg.mu.Unlock()
 
-	svc := labrpc.MakeService(rf)
-	srv := labrpc.MakeServer()
+	svc := simrpc.MakeService(rf)
+	srv := simrpc.MakeServer()
 	srv.AddService(svc)
 	cfg.net.AddServer(i, srv)
 }
