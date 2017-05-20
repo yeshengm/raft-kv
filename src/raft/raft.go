@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 	"fmt"
+	"bytes"
+	"encoding/gob"
 )
 
 type LogEntry struct {
@@ -77,8 +79,8 @@ const (
 
 // timeout thresholds
 const (
-	ElectionBaseTimeout = 400
-	ElectionRandTimeout = 200
+	ElectionBaseTimeout = 500
+	ElectionRandTimeout = 300
 	HeartbeatTimeout    = 100
 )
 
@@ -172,6 +174,7 @@ func (rf *Raft) StartWorking() {
 		case <-rf.heartbeatTimeout:
 			rf.heartbeatTimeoutHandler()
 		}
+		rf.persist()
 	}
 }
 
@@ -334,6 +337,7 @@ func (rf *Raft) heartbeatTimeoutHandler() {
 				}()
 			}
 		}
+		rf.persist()
 	}
 }
 
@@ -475,6 +479,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.commitIndex = rf.lastAppend
 		}
 	}
+	rf.persist()
 }
 
 // RPC helper functions
@@ -499,27 +504,28 @@ func (rf *Raft) GetState() (int, bool) {
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
 func (rf *Raft) persist() {
-	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := gob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
-	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := gob.NewDecoder(r)
-	// d.Decode(&rf.xxx)
-	// d.Decode(&rf.yyy)
-	if data == nil || len(data) < 1 { // bootstrap without any state?
-		return
-	}
+	r := bytes.NewBuffer(data)
+	d := gob.NewDecoder(r)
+
+	d.Decode(&rf.currentTerm)
+	d.Decode(&rf.votedFor)
+	d.Decode(&rf.log)
+	//if data == nil || len(data) < 1 { // bootstrap without any state?
+	//	return
+	//}
 }
 
 // the service using Raft (e.g. a k/v server) wants to start

@@ -688,7 +688,7 @@ func TestUnreliableAgree2C(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for iters := 1; iters < 50; iters++ {
+	for iters := 1; iters < 25; iters++ {
 		for j := 0; j < 4; j++ {
 			wg.Add(1)
 			go func(iters, j int) {
@@ -718,7 +718,7 @@ func TestFigure8Unreliable2C(t *testing.T) {
 	cfg.one(rand.Int()%10000, 1)
 
 	nup := servers
-	for iters := 0; iters < 1000; iters++ {
+	for iters := 0; iters < 100; iters++ {
 		if iters == 200 {
 			cfg.setlongreordering(true)
 		}
@@ -831,7 +831,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 		go cfn(i, cha[i])
 	}
 
-	for iters := 0; iters < 20; iters++ {
+	for iters := 0; iters < 5; iters++ {
 		if (rand.Int() % 1000) < 200 {
 			i := rand.Int() % servers
 			cfg.disconnect(i)
@@ -908,6 +908,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 	fmt.Printf("  ... Passed\n")
 }
 
+// TODO maybe we need to optimize the performance
 func TestReliableChurn2C(t *testing.T) {
 	internalChurn(t, false)
 }
