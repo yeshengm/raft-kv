@@ -317,9 +317,14 @@ func TestBackup2B(t *testing.T) {
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
 
+	go func() {
+		for {
+			cfg.debug()
+			time.Sleep(time.Millisecond * 50)
+		}
+	}()
 	fmt.Printf("Test (2B): leader backs up quickly over incorrect follower logs ...\n")
 	cfg.one(-1, servers)
-
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect((leader1 + 2) % servers)

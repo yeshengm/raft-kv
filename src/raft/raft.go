@@ -17,7 +17,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-	"fmt"
 	"bytes"
 	"encoding/gob"
 )
@@ -195,7 +194,7 @@ func (rf *Raft) requestVoteReplyHandler(rep RequestVoteReply) {
 		rf.voteCnt++
 		// the moment wins the election, starts first empty heartbeat
 		if rf.voteCnt == len(rf.peers)/2+1 {
-			fmt.Println(rf.me, " elected leader")
+			// fmt.Println("Node", rf.me, " elected leader")
 			rf.status = Leader
 			// when switch to leader, initialize volatile states on leader
 			for i := range rf.peers {
@@ -542,12 +541,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 // de-allocates resources
 func (rf *Raft) Kill() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	close(rf.electionTimeout)
-	close(rf.heartbeatTimeout)
-	close(rf.requestVoteReply)
-	close(rf.appendEntriesReply)
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
+	//close(rf.electionTimeout)
+	//close(rf.heartbeatTimeout)
+	//close(rf.requestVoteReply)
+	//close(rf.appendEntriesReply)
 }
 
 // factory method to create a Raft peer
