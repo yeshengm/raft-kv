@@ -1,12 +1,16 @@
 package kvraft
 
-import "../labrpc"
+import (
+	"../labrpc"
+	"sync"
+)
 import "crypto/rand"
 import "math/big"
 
-
 type Clerk struct {
-	servers []*labrpc.ClientEnd
+	servers  []*labrpc.ClientEnd
+	leaderId int
+	mu       sync.Mutex
 	// You will have to modify this struct.
 }
 
@@ -18,9 +22,10 @@ func nrand() int64 {
 }
 
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
+	// You'll have to add code here.
 	ck := new(Clerk)
 	ck.servers = servers
-	// You'll have to add code here.
+	ck.leaderId = int(nrand()) % len(ck.servers)
 	return ck
 }
 
@@ -29,31 +34,72 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // returns "" if the key does not exist.
 // keeps trying forever in the face of all other errors.
 //
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
 func (ck *Clerk) Get(key string) string {
-
 	// You will have to modify this function.
+	args := GetArgs{Key: key}
+	ck.mu.Lock()
+	leaderId := ck.leaderId
+	ck.mu.Unlock()
+	// retry until success
+	for true {
+		reply := GetReply{}
+		ok := ck.servers[leaderId].Call("KVServer.Get", &args, &reply)
+		if !ok {
+			leaderId = (leaderId + 1) % len(ck.servers)
+		} else {
+			switch reply.Err {
+			case ErrWrongLeader:
+				leaderId = (leaderId + 1) % len(ck.servers)
+			case ErrNoKey:
+				ck.mu.Lock()
+				ck.leaderId = leaderId
+				ck.mu.Unlock()
+				return ""
+			case OK:
+				ck.mu.Lock()
+				ck.leaderId = leaderId
+				ck.mu.Unlock()
+				return reply.Value
+			}
+		}
+	}
 	return ""
 }
 
 //
 // shared by Put and Append.
 //
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.PutAppend", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	args := PutAppendArgs{
+		Key:   key,
+		Value: value,
+		Op:    op,
+	}
+	ck.mu.Lock()
+	leaderId := ck.leaderId
+	ck.mu.Unlock()
+	// retry until success
+	for true {
+		reply := PutAppendReply{}
+		ok := ck.servers[leaderId].Call("KVServer.PutAppend", &args, &reply)
+		if !ok {
+			leaderId = (leaderId + 1) % len(ck.servers)
+		} else {
+			switch reply.Err {
+			case ErrWrongLeader:
+				DPrintf("[KV] (%v, %v, %v) reached wrong leader %v", op, key, value, leaderId)
+				leaderId = (leaderId + 1) % len(ck.servers)
+			case ErrNoKey:
+				panic("unreachable code")
+			case OK:
+				ck.mu.Lock()
+				ck.leaderId = leaderId
+				ck.mu.Unlock()
+				return
+			}
+		}
+	}
 }
 
 func (ck *Clerk) Put(key string, value string) {

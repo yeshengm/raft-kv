@@ -3,8 +3,8 @@ package kvraft
 import (
 	"../labgob"
 	"../labrpc"
-	"log"
 	"../raft"
+	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -18,15 +18,25 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
+const (
+	PUT = iota
+	APPEND
+	GET
+)
+
+type OpType int
 
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	RpcId  int
+	OpType OpType
+	Key    string
+	Value  string
 }
 
 type KVServer struct {
-	mu      sync.Mutex
 	me      int
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
@@ -35,15 +45,79 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-}
+	db map[string]string
 
+	rpcId    int
+	// TODO any better approach?
+	getChans map[int]chan string
+	putChans map[int]chan struct{}
+	mu       sync.Mutex
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	kv.mu.Lock()
+	kv.rpcId++
+	resChan := make(chan string)
+	kv.getChans[kv.rpcId] = resChan
+	op := Op{
+		RpcId:  kv.rpcId,
+		OpType: GET,
+		Key:    args.Key,
+		Value:  "",
+	}
+	kv.mu.Unlock()
+
+	_, _, ok := kv.rf.Start(op)
+	if !ok {
+		kv.mu.Lock()
+		delete(kv.getChans, op.RpcId)
+		kv.mu.Unlock()
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	reply.Err = OK
+	reply.Value = <-resChan
+	kv.mu.Lock()
+	delete(kv.getChans, op.RpcId)
+	kv.mu.Unlock()
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	kv.mu.Lock()
+	kv.rpcId++
+	resChan := make(chan struct{})
+	kv.putChans[kv.rpcId] = resChan
+	op := Op{
+		RpcId: kv.rpcId,
+		Key:   args.Key,
+		Value: args.Value,
+	}
+	if args.Op == "Put" {
+		op.OpType = PUT
+	} else if args.Op == "Append" {
+		op.OpType = APPEND
+	} else {
+		panic("unexpected")
+	}
+	kv.mu.Unlock()
+
+	_, _, ok := kv.rf.Start(op)
+	if !ok {
+		kv.mu.Lock()
+		delete(kv.putChans, op.RpcId)
+		kv.mu.Unlock()
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	reply.Err = OK
+	<-resChan
+	kv.mu.Lock()
+	delete(kv.putChans, op.RpcId)
+	kv.mu.Unlock()
 }
 
 //
@@ -94,8 +168,34 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-
+	kv.db = make(map[string]string)
+	kv.getChans = make(map[int]chan string)
+	kv.putChans = make(map[int]chan struct {})
 	// You may need initialization code here.
+
+	// dispatch applyCh messages to RPC handlers
+	go func() {
+		for !kv.killed() {
+			applyMsg := <-kv.applyCh
+			if !applyMsg.CommandValid {
+				panic("all cmds should be valid by now")
+			}
+			op := applyMsg.Command.(Op)
+			switch op.OpType {
+			case GET:
+				resChan := kv.getChans[op.RpcId]
+				resChan <- kv.db[op.Key]
+			case PUT:
+				resChan := kv.putChans[op.RpcId]
+				kv.db[op.Key] = op.Value
+				resChan <- struct{}{}
+			case APPEND:
+				resChan := kv.putChans[op.RpcId]
+				kv.db[op.Key] = kv.db[op.Key] + op.Value
+				resChan <- struct {}{}
+			}
+		}
+	}()
 
 	return kv
 }
