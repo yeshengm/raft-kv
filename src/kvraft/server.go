@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const Debug = 0
@@ -27,13 +28,11 @@ const (
 type OpType int
 
 type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-	RpcId  int
-	OpType OpType
-	Key    string
-	Value  string
+	ClerkId int
+	SeqNum  int
+	OpType  OpType
+	Key     string
+	Value   string // also serves as Get's response
 }
 
 type KVServer struct {
@@ -44,80 +43,113 @@ type KVServer struct {
 
 	maxraftstate int // snapshot if log grows this big
 
-	// Your definitions here.
-	db map[string]string
+	// RSM for the kv store
+	db    map[string]string
+	resps map[int]Op
 
-	rpcId    int
-	// TODO any better approach?
-	getChans map[int]chan string
-	putChans map[int]chan struct{}
-	mu       sync.Mutex
+	// a mapping from index to RPC completion channel, so that
+	// a client request can be notified of the log replicated
+	// on that index.
+	completionCh map[int]chan Op
+	mu           sync.Mutex
+}
+
+// synchronously call into Raft.Start()
+func (kv *KVServer) syncRaftStart(op Op) (Err, Op) {
+	index, _, ok := kv.rf.Start(op)
+
+	// not leader
+	if !ok {
+		return ErrWrongLeader, op
+	}
+
+	// wait for response on this channel
+	// NB: it is possible that a major GC is triggered here and
+	// this channel can never receive the response.
+	kv.mu.Lock()
+	ch, ok := kv.completionCh[index]
+	if !ok {
+		ch = make(chan Op)
+		kv.completionCh[index] = ch
+	}
+	kv.mu.Unlock()
+
+	var err Err
+	var committedOp Op
+	select {
+	case committedOp = <-ch:
+		// successful commit at this index
+		if op.ClerkId == committedOp.ClerkId && op.SeqNum == committedOp.SeqNum {
+			err = OK
+		} else {
+			err = ErrWrongLeader
+		}
+	case <-time.After(1000 * time.Millisecond):
+		// timeout, but not necessarily failed commit. simply retry.
+		err = ErrWrongLeader
+	}
+
+	kv.mu.Lock()
+	delete(kv.completionCh, index)
+	kv.mu.Unlock()
+	return err, committedOp
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
-	kv.mu.Lock()
-	kv.rpcId++
-	resChan := make(chan string)
-	kv.getChans[kv.rpcId] = resChan
 	op := Op{
-		RpcId:  kv.rpcId,
-		OpType: GET,
-		Key:    args.Key,
-		Value:  "",
+		ClerkId: args.ClerkId,
+		SeqNum:  args.SeqNum,
+		OpType:  GET,
+		Key:     args.Key,
+		Value:   "",
 	}
-	kv.mu.Unlock()
 
-	_, _, ok := kv.rf.Start(op)
-	if !ok {
-		kv.mu.Lock()
-		delete(kv.getChans, op.RpcId)
+	// check for duplicate
+	kv.mu.Lock()
+	lastOp, ok := kv.resps[args.ClerkId]
+	if ok && lastOp.SeqNum == args.SeqNum {
+		reply.Err = OK
+		reply.Value = lastOp.Value
 		kv.mu.Unlock()
-		reply.Err = ErrWrongLeader
 		return
 	}
-
-	reply.Err = OK
-	reply.Value = <-resChan
-	kv.mu.Lock()
-	delete(kv.getChans, op.RpcId)
 	kv.mu.Unlock()
+
+	err, committedOp := kv.syncRaftStart(op)
+	reply.Err = err
+	reply.Value = committedOp.Value
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
-	kv.mu.Lock()
-	kv.rpcId++
-	resChan := make(chan struct{})
-	kv.putChans[kv.rpcId] = resChan
-	op := Op{
-		RpcId: kv.rpcId,
-		Key:   args.Key,
-		Value: args.Value,
-	}
-	if args.Op == "Put" {
-		op.OpType = PUT
-	} else if args.Op == "Append" {
-		op.OpType = APPEND
-	} else {
+	var opType OpType
+	switch args.Op {
+	case "Put":
+		opType = PUT
+	case "Append":
+		opType = APPEND
+	default:
 		panic("unexpected")
 	}
-	kv.mu.Unlock()
-
-	_, _, ok := kv.rf.Start(op)
-	if !ok {
-		kv.mu.Lock()
-		delete(kv.putChans, op.RpcId)
-		kv.mu.Unlock()
-		reply.Err = ErrWrongLeader
-		return
+	op := Op{
+		ClerkId: args.ClerkId,
+		SeqNum:  args.SeqNum,
+		OpType:  opType,
+		Key:     args.Key,
+		Value:   args.Value,
 	}
 
-	reply.Err = OK
-	<-resChan
+	// check for duplicate
 	kv.mu.Lock()
-	delete(kv.putChans, op.RpcId)
+	lastOp, ok := kv.resps[args.ClerkId]
+	if ok && lastOp.SeqNum == args.SeqNum {
+		reply.Err = OK
+		kv.mu.Unlock()
+		return
+	}
 	kv.mu.Unlock()
+
+	err, _ := kv.syncRaftStart(op)
+	reply.Err = err
 }
 
 //
@@ -163,15 +195,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
-
-	// You may need initialization code here.
-
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.db = make(map[string]string)
-	kv.getChans = make(map[int]chan string)
-	kv.putChans = make(map[int]chan struct {})
-	// You may need initialization code here.
+	kv.resps = make(map[int]Op)
+	kv.completionCh = make(map[int]chan Op)
 
 	// dispatch applyCh messages to RPC handlers
 	go func() {
@@ -181,18 +209,31 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 				panic("all cmds should be valid by now")
 			}
 			op := applyMsg.Command.(Op)
-			switch op.OpType {
-			case GET:
-				resChan := kv.getChans[op.RpcId]
-				resChan <- kv.db[op.Key]
-			case PUT:
-				resChan := kv.putChans[op.RpcId]
-				kv.db[op.Key] = op.Value
-				resChan <- struct{}{}
-			case APPEND:
-				resChan := kv.putChans[op.RpcId]
-				kv.db[op.Key] = kv.db[op.Key] + op.Value
-				resChan <- struct {}{}
+			index := applyMsg.CommandIndex
+			kv.mu.Lock()
+			lastOp, ok := kv.resps[op.ClerkId]
+			if !ok || op.SeqNum > lastOp.SeqNum {
+
+				// apply to RSM
+				switch op.OpType {
+				case GET:
+					op.Value = kv.db[op.Key]
+				case PUT:
+					kv.db[op.Key] = op.Value
+				case APPEND:
+					kv.db[op.Key] = kv.db[op.Key] + op.Value
+				}
+				kv.resps[op.ClerkId] = op
+				// notify the completion channel
+				ch, ok := kv.completionCh[index]
+
+				kv.mu.Unlock()
+				if ok {
+					// TODO can have deadlock here...
+					ch <- op
+				}
+			} else {
+				kv.mu.Unlock()
 			}
 		}
 	}()

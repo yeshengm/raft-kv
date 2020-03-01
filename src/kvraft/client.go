@@ -2,7 +2,6 @@ package kvraft
 
 import (
 	"../labrpc"
-	"sync"
 )
 import "crypto/rand"
 import "math/big"
@@ -10,8 +9,9 @@ import "math/big"
 type Clerk struct {
 	servers  []*labrpc.ClientEnd
 	leaderId int
-	mu       sync.Mutex
-	// You will have to modify this struct.
+
+	clerkId int
+	seqNum  int
 }
 
 func nrand() int64 {
@@ -22,10 +22,11 @@ func nrand() int64 {
 }
 
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
-	// You'll have to add code here.
 	ck := new(Clerk)
 	ck.servers = servers
 	ck.leaderId = int(nrand()) % len(ck.servers)
+	ck.clerkId = int(nrand())
+	ck.seqNum = 0
 	return ck
 }
 
@@ -35,67 +36,62 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // keeps trying forever in the face of all other errors.
 //
 func (ck *Clerk) Get(key string) string {
-	// You will have to modify this function.
-	args := GetArgs{Key: key}
-	ck.mu.Lock()
-	leaderId := ck.leaderId
-	ck.mu.Unlock()
+	ck.seqNum++
+	if key == "1" {
+		DPrintf("[CLIENT][%v][%v] Get(%v)", ck.clerkId, ck.seqNum, key)
+	}
+	args := GetArgs{
+		ClerkId: ck.clerkId,
+		SeqNum:  ck.seqNum,
+		Key:     key,
+	}
 	// retry until success
-	for true {
+	for {
 		reply := GetReply{}
-		ok := ck.servers[leaderId].Call("KVServer.Get", &args, &reply)
+		ok := ck.servers[ck.leaderId].Call("KVServer.Get", &args, &reply)
 		if !ok {
-			leaderId = (leaderId + 1) % len(ck.servers)
+			ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 		} else {
 			switch reply.Err {
 			case ErrWrongLeader:
-				leaderId = (leaderId + 1) % len(ck.servers)
+				ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 			case ErrNoKey:
-				ck.mu.Lock()
-				ck.leaderId = leaderId
-				ck.mu.Unlock()
 				return ""
 			case OK:
-				ck.mu.Lock()
-				ck.leaderId = leaderId
-				ck.mu.Unlock()
 				return reply.Value
 			}
 		}
 	}
-	return ""
 }
 
 //
 // shared by Put and Append.
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
-	// You will have to modify this function.
-	args := PutAppendArgs{
-		Key:   key,
-		Value: value,
-		Op:    op,
+	ck.seqNum++
+	if key == "1" {
+		DPrintf("[CLIENT][%v][%v] %v(%v, %v)", ck.clerkId, ck.seqNum, op, key, value)
 	}
-	ck.mu.Lock()
-	leaderId := ck.leaderId
-	ck.mu.Unlock()
+	args := PutAppendArgs{
+		ClerkId: ck.clerkId,
+		SeqNum:  ck.seqNum,
+		Key:     key,
+		Value:   value,
+		Op:      op,
+	}
 	// retry until success
 	for true {
 		reply := PutAppendReply{}
-		ok := ck.servers[leaderId].Call("KVServer.PutAppend", &args, &reply)
+		ok := ck.servers[ck.leaderId].Call("KVServer.PutAppend", &args, &reply)
 		if !ok {
-			leaderId = (leaderId + 1) % len(ck.servers)
+			ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 		} else {
 			switch reply.Err {
 			case ErrWrongLeader:
-				DPrintf("[KV] (%v, %v, %v) reached wrong leader %v", op, key, value, leaderId)
-				leaderId = (leaderId + 1) % len(ck.servers)
+				ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
 			case ErrNoKey:
 				panic("unreachable code")
 			case OK:
-				ck.mu.Lock()
-				ck.leaderId = leaderId
-				ck.mu.Unlock()
 				return
 			}
 		}
