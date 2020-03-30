@@ -4,6 +4,7 @@ import (
 	"../labgob"
 	"../labrpc"
 	"../raft"
+	"bytes"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -44,8 +45,9 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// RSM for the kv store
-	db    map[string]string
-	resps map[int]Op
+	db           map[string]string
+	resps        map[int]Op
+	lastIncluded int
 
 	// a mapping from index to RPC completion channel, so that
 	// a client request can be notified of the log replicated
@@ -197,16 +199,25 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxraftstate = maxraftstate
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	// TODO read from persister
 	kv.db = make(map[string]string)
 	kv.resps = make(map[int]Op)
+	kv.lastIncluded = 0
 	kv.completionCh = make(map[int]chan Op)
 
 	// dispatch applyCh messages to RPC handlers
 	go func() {
 		for !kv.killed() {
 			applyMsg := <-kv.applyCh
+			// TODO serve log compaction request here
 			if !applyMsg.CommandValid {
-				panic("all cmds should be valid by now")
+				w := new(bytes.Buffer)
+				e := labgob.NewEncoder(w)
+				_ = e.Encode(kv.db)
+				_ = e.Encode(kv.resps)
+				data := w.Bytes()
+				go kv.rf.Snapshot(data, kv.lastIncluded)
+				continue
 			}
 			op := applyMsg.Command.(Op)
 			index := applyMsg.CommandIndex
@@ -224,6 +235,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					kv.db[op.Key] = kv.db[op.Key] + op.Value
 				}
 				kv.resps[op.ClerkId] = op
+				kv.lastIncluded = index
 				// notify the completion channel
 				ch, ok := kv.completionCh[index]
 
