@@ -1,11 +1,11 @@
 package kvraft
 
 import (
-	"../labgob"
-	"../labrpc"
-	"../raft"
 	"bytes"
+	"labgob"
+	"labrpc"
 	"log"
+	"raft"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,11 +43,12 @@ type KVServer struct {
 	dead    int32 // set by Kill()
 
 	maxraftstate int // snapshot if log grows this big
+	persister *raft.Persister
 
-	// RSM for the kv store
+	// state machine for the kv store
 	db           map[string]string
 	resps        map[int]Op
-	lastIncluded int
+	lastApplied int
 
 	// a mapping from index to RPC completion channel, so that
 	// a client request can be notified of the log replicated
@@ -176,6 +177,31 @@ func (kv *KVServer) killed() bool {
 }
 
 //
+// restore previously persisted snapshot.
+//
+func (kv *KVServer) readPersist(data []byte) {
+	// bootstrap without any state
+	if data == nil || len(data) < 1 {
+		kv.db = make(map[string]string)
+		kv.resps = make(map[int]Op)
+		kv.lastApplied = 0
+		return
+	}
+	kv.lastApplied = 0
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	if d.Decode(&kv.db) != nil {
+		panic("error decoding db")
+	}
+	if d.Decode(&kv.resps) != nil {
+		panic("error decoding resps")
+	}
+	if d.Decode(&kv.lastApplied) != nil {
+		panic("error decoding lastApplied")
+	}
+}
+
+//
 // servers[] contains the ports of the set of
 // servers that will cooperate via Raft to
 // form the fault-tolerant key/value service.
@@ -197,47 +223,56 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
+	kv.persister = persister
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-	// TODO read from persister
-	kv.db = make(map[string]string)
-	kv.resps = make(map[int]Op)
-	kv.lastIncluded = 0
+	kv.readPersist(persister.ReadSnapshot())
 	kv.completionCh = make(map[int]chan Op)
 
 	// dispatch applyCh messages to RPC handlers
 	go func() {
 		for !kv.killed() {
 			applyMsg := <-kv.applyCh
-			// TODO serve log compaction request here
+			kv.mu.Lock()
+			// handle InstallSnapshot RPC
 			if !applyMsg.CommandValid {
-				w := new(bytes.Buffer)
-				e := labgob.NewEncoder(w)
-				_ = e.Encode(kv.db)
-				_ = e.Encode(kv.resps)
-				data := w.Bytes()
-				go kv.rf.Snapshot(data, kv.lastIncluded)
+				kv.readPersist(applyMsg.Data)
+				// garbage collect unused channels in completionCh
+				for index := range kv.completionCh {
+					if index <= applyMsg.LastIncludedIndex {
+						delete(kv.completionCh, index)
+					}
+				}
+				kv.mu.Unlock()
 				continue
 			}
 			op := applyMsg.Command.(Op)
 			index := applyMsg.CommandIndex
-			kv.mu.Lock()
+
+			DPrintf("[RSM][%v] receive log %v", kv.me, index)
+			if index != kv.lastApplied + 1 {
+				DPrintf("[RSM][%v] log index %v, last applied %v", kv.me, index, kv.lastApplied)
+				kv.mu.Unlock()
+				continue
+			}
+
 			lastOp, ok := kv.resps[op.ClerkId]
 			if !ok || op.SeqNum > lastOp.SeqNum {
-
-				// apply to RSM
 				switch op.OpType {
 				case GET:
 					op.Value = kv.db[op.Key]
+					DPrintf("[KV][%v] Get(%v)@%v", kv.me, op.Key, index)
 				case PUT:
 					kv.db[op.Key] = op.Value
+					DPrintf("[KV][%v] Put(%v, %v)@%v", kv.me, op.Key, op.Value, index)
 				case APPEND:
 					kv.db[op.Key] = kv.db[op.Key] + op.Value
+					DPrintf("[KV][%v] Append(%v, %v)@%v", kv.me, op.Key, op.Value, index)
 				}
 				kv.resps[op.ClerkId] = op
-				kv.lastIncluded = index
 				// notify the completion channel
 				ch, ok := kv.completionCh[index]
+				kv.lastApplied += 1
 
 				kv.mu.Unlock()
 				if ok {
@@ -245,7 +280,30 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					ch <- op
 				}
 			} else {
+				switch op.OpType {
+				case GET:
+					DPrintf("[RSM][%v] duplicate log %v, Get(%v), %v", kv.me, index, op.Key, op)
+				case PUT:
+					DPrintf("[RSM][%v] duplicate log %v, Put(%v, %v), %v", kv.me, index, op.Key, op.Value, op)
+				case APPEND:
+					DPrintf("[RSM][%v] duplicate log %v, Append(%v, %v), %v", kv.me, index, op.Key, op.Value, op)
+				}
+				kv.lastApplied += 1
 				kv.mu.Unlock()
+			}
+
+			// check if a log compaction is necessary
+			if kv.maxraftstate == -1 {
+				continue
+			}
+			if kv.persister.RaftStateSize() >= kv.maxraftstate {
+				w := new(bytes.Buffer)
+				e := labgob.NewEncoder(w)
+				_ = e.Encode(kv.db)
+				_ = e.Encode(kv.resps)
+				_ = e.Encode(kv.lastApplied)
+				snapshot := w.Bytes()
+				go kv.rf.Snapshot(snapshot, index)
 			}
 		}
 	}()

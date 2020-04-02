@@ -1,8 +1,6 @@
 package kvraft
 
-import (
-	"../labrpc"
-)
+import "labrpc"
 import "crypto/rand"
 import "math/big"
 
@@ -37,9 +35,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 //
 func (ck *Clerk) Get(key string) string {
 	ck.seqNum++
-	if key == "1" {
-		DPrintf("[CLIENT][%v][%v] Get(%v)", ck.clerkId, ck.seqNum, key)
-	}
+	DPrintf("[CLIENT][%v][%v] Get(%v)", ck.clerkId, ck.seqNum, key)
 	args := GetArgs{
 		ClerkId: ck.clerkId,
 		SeqNum:  ck.seqNum,
@@ -69,9 +65,7 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	ck.seqNum++
-	if key == "1" {
-		DPrintf("[CLIENT][%v][%v] %v(%v, %v)", ck.clerkId, ck.seqNum, op, key, value)
-	}
+	DPrintf("[CLIENT][%v][%v] %v(%v, %v)", ck.clerkId, ck.seqNum, op, key, value)
 	args := PutAppendArgs{
 		ClerkId: ck.clerkId,
 		SeqNum:  ck.seqNum,
@@ -85,13 +79,16 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		ok := ck.servers[ck.leaderId].Call("KVServer.PutAppend", &args, &reply)
 		if !ok {
 			ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
+			DPrintf("[CLIENT][%v][%v] %v(%v, %v), retry Raft %v", ck.clerkId, ck.seqNum, op, key, value, ck.leaderId)
 		} else {
 			switch reply.Err {
 			case ErrWrongLeader:
 				ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
+				DPrintf("[CLIENT][%v][%v] %v(%v, %v), retry Raft %v", ck.clerkId, ck.seqNum, op, key, value, ck.leaderId)
 			case ErrNoKey:
 				panic("unreachable code")
 			case OK:
+				DPrintf("[CLIENT][%v][%v] %v(%v, %v) committed", ck.clerkId, ck.seqNum, op, key, value)
 				return
 			}
 		}
