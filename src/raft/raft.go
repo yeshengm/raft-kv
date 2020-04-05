@@ -137,7 +137,6 @@ func (rf *Raft) offset2index(offset int) int {
 	return rf.lastIncludedIndex + offset + 1
 }
 
-
 //
 // Raft state transition
 //
@@ -295,9 +294,9 @@ type AppendEntriesReply struct {
 	Term    int
 	Success bool
 	// hints for fast log replication
-	XIndex  int
-	XTerm   int
-	XLen    int
+	XIndex int
+	XTerm  int
+	XLen   int
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -670,7 +669,6 @@ func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply
 	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
 	return ok
 }
-
 
 //
 // Apply a snapshot from the upper-layer service to the raft state machine

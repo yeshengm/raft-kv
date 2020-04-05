@@ -39,7 +39,7 @@ func check(t *testing.T, groups []int, ck *Clerk) {
 	}
 	min := 257
 	max := 0
-	for g, _ := range c.Groups {
+	for g := range c.Groups {
 		if counts[g] > max {
 			max = counts[g]
 		}
@@ -92,12 +92,12 @@ func TestBasic(t *testing.T) {
 	check(t, []int{}, ck)
 
 	var gid1 int = 1
-	ck.Join(map[int][]string{gid1: []string{"x", "y", "z"}})
+	ck.Join(map[int][]string{gid1: {"x", "y", "z"}})
 	check(t, []int{gid1}, ck)
 	cfa[1] = ck.Query(-1)
 
 	var gid2 int = 2
-	ck.Join(map[int][]string{gid2: []string{"a", "b", "c"}})
+	ck.Join(map[int][]string{gid2: {"a", "b", "c"}})
 	check(t, []int{gid1, gid2}, ck)
 	cfa[2] = ck.Query(-1)
 
@@ -137,9 +137,9 @@ func TestBasic(t *testing.T) {
 	fmt.Printf("Test: Move ...\n")
 	{
 		var gid3 int = 503
-		ck.Join(map[int][]string{gid3: []string{"3a", "3b", "3c"}})
+		ck.Join(map[int][]string{gid3: {"3a", "3b", "3c"}})
 		var gid4 int = 504
-		ck.Join(map[int][]string{gid4: []string{"4a", "4b", "4c"}})
+		ck.Join(map[int][]string{gid4: {"4a", "4b", "4c"}})
 		for i := 0; i < NShards; i++ {
 			cf := ck.Query(-1)
 			if i < NShards/2 {
@@ -195,8 +195,8 @@ func TestBasic(t *testing.T) {
 			var gid int = gids[i]
 			var sid1 = fmt.Sprintf("s%da", gid)
 			var sid2 = fmt.Sprintf("s%db", gid)
-			cka[i].Join(map[int][]string{gid + 1000: []string{sid1}})
-			cka[i].Join(map[int][]string{gid: []string{sid2}})
+			cka[i].Join(map[int][]string{gid + 1000: {sid1}})
+			cka[i].Join(map[int][]string{gid: {sid2}})
 			cka[i].Leave([]int{gid + 1000})
 		}(xi)
 	}
@@ -212,7 +212,7 @@ func TestBasic(t *testing.T) {
 	c1 := ck.Query(-1)
 	for i := 0; i < 5; i++ {
 		var gid = int(npara + 1 + i)
-		ck.Join(map[int][]string{gid: []string{
+		ck.Join(map[int][]string{gid: {
 			fmt.Sprintf("%da", gid),
 			fmt.Sprintf("%db", gid),
 			fmt.Sprintf("%db", gid)}})
@@ -266,14 +266,14 @@ func TestMulti(t *testing.T) {
 	var gid1 int = 1
 	var gid2 int = 2
 	ck.Join(map[int][]string{
-		gid1: []string{"x", "y", "z"},
-		gid2: []string{"a", "b", "c"},
+		gid1: {"x", "y", "z"},
+		gid2: {"a", "b", "c"},
 	})
 	check(t, []int{gid1, gid2}, ck)
 	cfa[1] = ck.Query(-1)
 
 	var gid3 int = 3
-	ck.Join(map[int][]string{gid3: []string{"j", "k", "l"}})
+	ck.Join(map[int][]string{gid3: {"j", "k", "l"}})
 	check(t, []int{gid1, gid2, gid3}, ck)
 	cfa[2] = ck.Query(-1)
 
@@ -321,12 +321,12 @@ func TestMulti(t *testing.T) {
 			defer wg.Done()
 			var gid int = gids[i]
 			cka[i].Join(map[int][]string{
-				gid: []string{
+				gid: {
 					fmt.Sprintf("%da", gid),
 					fmt.Sprintf("%db", gid),
 					fmt.Sprintf("%dc", gid)},
-				gid + 1000: []string{fmt.Sprintf("%da", gid+1000)},
-				gid + 2000: []string{fmt.Sprintf("%da", gid+2000)},
+				gid + 1000: {fmt.Sprintf("%da", gid+1000)},
+				gid + 2000: {fmt.Sprintf("%da", gid+2000)},
 			})
 			cka[i].Leave([]int{gid + 1000, gid + 2000})
 		}(xi)

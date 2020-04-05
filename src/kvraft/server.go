@@ -43,11 +43,11 @@ type KVServer struct {
 	dead    int32 // set by Kill()
 
 	maxraftstate int // snapshot if log grows this big
-	persister *raft.Persister
+	persister    *raft.Persister
 
 	// state machine for the kv store
-	db           map[string]string
-	resps        map[int]Op
+	db          map[string]string
+	resps       map[int]Op
 	lastApplied int
 
 	// a mapping from index to RPC completion channel, so that
@@ -250,7 +250,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 			index := applyMsg.CommandIndex
 
 			DPrintf("[RSM][%v] receive log %v", kv.me, index)
-			if index != kv.lastApplied + 1 {
+			if index != kv.lastApplied+1 {
 				DPrintf("[RSM][%v] log index %v, last applied %v", kv.me, index, kv.lastApplied)
 				kv.mu.Unlock()
 				continue

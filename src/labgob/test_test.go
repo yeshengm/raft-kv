@@ -38,7 +38,7 @@ func TestGOB(t *testing.T) {
 		t1.T1int1 = 1
 		t1.T1string1 = "6.824"
 		t2 := T2{}
-		t2.T2slice = []T1{T1{}, t1}
+		t2.T2slice = []T1{{}, t1}
 		t2.T2map = map[int]*T1{}
 		t2.T2map[99] = &T1{1, 2, "x", "y"}
 		t2.T2t3 = T3{999}
