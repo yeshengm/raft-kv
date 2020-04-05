@@ -272,7 +272,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 				kv.resps[op.ClerkId] = op
 				// notify the completion channel
 				ch, ok := kv.completionCh[index]
-				kv.lastApplied += 1
+				kv.lastApplied++
 
 				kv.mu.Unlock()
 				if ok {

@@ -7,9 +7,8 @@ import "math/big"
 type Clerk struct {
 	servers  []*labrpc.ClientEnd
 	leaderId int
-
-	clerkId int
-	seqNum  int
+	clerkId  int
+	seqNum   int
 }
 
 func nrand() int64 {
