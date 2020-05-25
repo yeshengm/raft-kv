@@ -37,6 +37,7 @@ type Op struct {
 }
 
 type KVServer struct {
+	mu      sync.Mutex
 	me      int
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
@@ -54,7 +55,6 @@ type KVServer struct {
 	// a client request can be notified of the log replicated
 	// on that index.
 	completionCh map[int]chan Op
-	mu           sync.Mutex
 }
 
 // synchronously call into Raft.Start()
